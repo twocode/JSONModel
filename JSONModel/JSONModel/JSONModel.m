@@ -89,7 +89,7 @@ static JSONKeyMapper* globalKeyMapper = nil;
     if (!objc_getAssociatedObject(self.class, &kClassPropertiesKey)) {
         [self __inspectProperties];
     }
-
+    NSDictionary* classProperties = objc_getAssociatedObject(self.class, &kClassPropertiesKey);
     //if there's a custom key mapper, store it in the associated object
     id mapper = [[self class] keyMapper];
     if ( mapper && !objc_getAssociatedObject(self.class, &kMapperObjectKey) ) {
@@ -202,7 +202,6 @@ static JSONKeyMapper* globalKeyMapper = nil;
 
 -(JSONKeyMapper*)__keyMapper
 {
-    //get the model key mapper
     return objc_getAssociatedObject(self.class, &kMapperObjectKey);
 }
 
@@ -210,7 +209,9 @@ static JSONKeyMapper* globalKeyMapper = nil;
 {
     //check if all required properties are present
     NSArray* incomingKeysArray = [dict allKeys];
+    JMLog(@"allKeys:%@", incomingKeysArray);
     NSMutableSet* requiredProperties = [self __requiredPropertyNames];
+    JMLog(@"requiredProperties: %@", requiredProperties);
     NSSet* incomingKeys = [NSSet setWithArray: incomingKeysArray];
     
     //transform the key names, if neccessary
@@ -286,7 +287,7 @@ static JSONKeyMapper* globalKeyMapper = nil;
         
         //convert key name ot model keys, if a mapper is provided
         NSString* jsonKeyPath = (keyMapper||globalKeyMapper) ? [self __mapString:property.name withKeyMapper:keyMapper importing:YES] : property.name;
-        //JMLog(@"keyPath: %@", jsonKeyPath);
+        JMLog(@"keyPath: %@", jsonKeyPath);
         
         //general check for data type compliance
         id jsonValue;
@@ -404,13 +405,20 @@ static JSONKeyMapper* globalKeyMapper = nil;
                 // 3.1) handle matching standard JSON types
                 if (property.isStandardJSONType && [jsonValue isKindOfClass: property.type]) {
                     
+                    
                     //mutable properties
                     if (property.isMutable) {
                         jsonValue = [jsonValue mutableCopy];
                     }
                     
                     //set the property value
-                    [self setValue:jsonValue forKey: property.name];
+                    NSRange range = [property.name rangeOfString:[NSString stringWithFormat:@"."]];
+                    
+                    if (range.length > 0) {
+                        [self setValue:jsonValue forKeyPath:property.name];
+                    } else {
+                        [self setValue:jsonValue forKey: property.name];
+                    }
                     continue;
                 }
                 
@@ -533,15 +541,8 @@ static JSONKeyMapper* globalKeyMapper = nil;
     return [classProperties allValues];
 }
 
-//inspects the class, get's a list of the class properties
--(void)__inspectProperties
+-(void)__inspectPropertiesInternal:(Class)class Property:(NSMutableDictionary*)propertyIndex Keyname:(NSString *)parentKeyName
 {
-    //JMLog(@"Inspect class: %@", [self class]);
-    
-    NSMutableDictionary* propertyIndex = [NSMutableDictionary dictionary];
-    
-    //temp variables for the loops
-    Class class = [self class];
     NSScanner* scanner = nil;
     NSString* propertyType = nil;
     
@@ -554,9 +555,9 @@ static JSONKeyMapper* globalKeyMapper = nil;
         
         //loop over the class properties
         for (unsigned int i = 0; i < propertyCount; i++) {
-
+            
             JSONModelClassProperty* p = [[JSONModelClassProperty alloc] init];
-
+            
             //get property name
             objc_property_t property = properties[i];
             const char *propertyName = property_getName(property);
@@ -624,7 +625,12 @@ static JSONKeyMapper* globalKeyMapper = nil;
                     
                     [scanner scanString:@">" intoString:NULL];
                 }
-
+                
+                if ([propertyAttributes rangeOfString:@"Model"].length > 0) {
+                    [self __inspectPropertiesInternal:p.type Property:propertyIndex Keyname:p.name];
+                    continue;
+                }
+                
             }
             //check if the property is a structure
             else if ([scanner scanString:@"{" intoString: &propertyType]) {
@@ -633,11 +639,11 @@ static JSONKeyMapper* globalKeyMapper = nil;
                 
                 p.isStandardJSONType = NO;
                 p.structName = propertyType;
-
+                
             }
             //the property must be a primitive
             else {
-
+                
                 //the property contains a primitive data type
                 [scanner scanUpToCharactersFromSet:[NSCharacterSet characterSetWithCharactersInString:@","]
                                         intoString:&propertyType];
@@ -652,9 +658,9 @@ static JSONKeyMapper* globalKeyMapper = nil;
                                                    reason:[NSString stringWithFormat:@"Property type of %@.%@ is not supported by JSONModel.", self.class, p.name]
                                                  userInfo:nil];
                 }
-
+                
             }
-
+            
             NSString *nsPropertyName = @(propertyName);
             if([[self class] propertyIsOptional:nsPropertyName]){
                 p.isOptional = YES;
@@ -671,16 +677,37 @@ static JSONKeyMapper* globalKeyMapper = nil;
             
             //add the property object to the temp index
             if (p) {
-                [propertyIndex setValue:p forKey:p.name];
+                NSString *key = nil;
+                if (parentKeyName) {
+                    p.name = [NSString stringWithFormat:@"%@.%@", parentKeyName, p.name];
+                    key = p.name;
+                } else {
+                    key = p.name;
+                }
+                [propertyIndex setValue:p forKey:key];
             }
         }
-        
+    EXIT:
         free(properties);
         
         //ascend to the super of the class
         //(will do that until it reaches the root class - JSONModel)
         class = [class superclass];
     }
+}
+
+//inspects the class, get's a list of the class properties
+-(void)__inspectProperties
+{
+    //JMLog(@"Inspect class: %@", [self class]);
+    
+    NSMutableDictionary* propertyIndex = [NSMutableDictionary dictionary];
+    
+    //temp variables for the loops
+    Class class = [self class];
+    
+    [self __inspectPropertiesInternal:class Property:propertyIndex Keyname:nil];
+    
     
     //finally store the property index in the static property index
     objc_setAssociatedObject(
@@ -931,8 +958,14 @@ static JSONKeyMapper* globalKeyMapper = nil;
             continue;
         
         //fetch key and value
-        NSString* keyPath = (self.__keyMapper||globalKeyMapper) ? [self __mapString:p.name withKeyMapper:self.__keyMapper importing:YES] : p.name;
-        value = [self valueForKey: p.name];
+        NSString* keyPath = (self.__keyMapper||globalKeyMapper) ? [self __mapString:p.name withKeyMapper:self.__keyMapper importing:NO] : p.name;
+        NSRange range = [keyPath rangeOfString:[NSString stringWithFormat:@"."]];
+        
+        if (range.length > 0) {
+            value = [self valueForKeyPath:keyPath];
+        } else {
+            value = [self valueForKey:keyPath];
+        }
         
         //JMLog(@"toDictionary[%@]->[%@] = '%@'", p.name, keyPath, value);
 

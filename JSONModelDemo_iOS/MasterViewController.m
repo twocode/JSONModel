@@ -87,23 +87,58 @@
 
 @end
 
-@interface JSONAnswer : JSONModel
-@property (nonatomic, strong) NSString* name;
+@interface Model : JSONModel 
+@property (copy, nonatomic) NSString * no;
+@property (copy, nonatomic) NSString * desc;
 @end
 
-@implementation JSONAnswer
+@implementation Model
+@synthesize no      = _no;
+@synthesize desc    = _desc;
+
+- (id)init
+{
+    self = [super init];
+    
+    assert(self != nil);
+    
+    _no     = nil;
+    _desc   = nil;
+    
+    return self;
+}
+
 @end
 
 @interface TopModel : JSONModel
-@property (assign, nonatomic) int id;
-@property (strong, nonatomic) JSONAnswer<Optional>* answer;
-@property (assign, nonatomic, readonly) int rId;
-@property (nonatomic, copy) void(^userLocationCompleted)();
-@property (strong, nonatomic) NSDictionary* dict;
-@property (strong, nonatomic) NSString* description;
+@property (copy, nonatomic) NSString * id;
+@property (copy, nonatomic) NSString * name;
+@property (strong, nonatomic) Model * model;
+
+-(id)initWithString:(NSString*)string error:(JSONModelError**)err;
+
 @end
 
 @implementation TopModel
+@synthesize id      = _id;
+@synthesize name    = _name;
+@synthesize model   = _model;
+
+-(id)initWithString:(NSString*)string error:(JSONModelError**)err
+{
+    self = [super initWithString:string error:err];
+    
+    if (self) {
+        _model = [[Model alloc] init];
+//        _model.no = @"TEST";
+//        [self setValue:@"mabide" forKeyPath:@"model.no"];
+    } else {
+        //ERROR
+    }
+    
+    return self;
+}
+
 +(BOOL)propertyIsIgnored:(NSString *)propertyName
 {
     return NO;
@@ -112,14 +147,23 @@
 {
     return @"1123";
 }
+
+
++(JSONKeyMapper*)keyMapper
+{
+    return [JSONKeyMapper mapperFromCamelCaseToObjCKey];
+}
 @end
 
 @implementation MasterViewController
 
 -(void)viewDidAppear:(BOOL)animated
 {
-    NSString* json = @"{\"id\":1, \"answer\": {\"name1\":\"marin\"}, \"dict\":[], \"description\":\"Marin\"}";
-    TopModel* tm = [[TopModel alloc] initWithString:json error:nil];
+    
+//    NSString* json = @"{\"id\":1, \"answer\": {\"name\":\"marin\"}, \"dict\":[], \"description\":\"Marin\"}";
+    NSString* json2 = @"{\"id\": \"123456\", \"name\": \"little\", \"modelNo\": \"model 1586\",  \"modelDesc\": \"a short description\"}";
+
+    TopModel* tm = [[TopModel alloc] initWithString:json2 error:nil];
     NSLog(@"tm: %@", tm.toDictionary);
     NSLog(@"to string: %@", tm.toJSONString);
 }
@@ -198,5 +242,10 @@
             break;
     }
 }
+
+//-(BOOL)__importDictionary:(NSDictionary*)dict withKeyMapper:(JSONKeyMapper*)keyMapper validation:(BOOL)validation error:(NSError**)err
+//{
+//    [super __]
+//}
 
 @end

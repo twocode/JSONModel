@@ -171,4 +171,30 @@
 
 }
 
++(instancetype)mapperFromCamelCaseToObjCKey
+{
+    JSONModelKeyMapBlock toModel = ^ NSString* (NSString* keyName) {
+        return keyName;
+    };
+    
+    JSONModelKeyMapBlock toJSON = ^ NSString* (NSString* keyName) {
+        NSRange range = [keyName rangeOfString:[NSString stringWithFormat:@"."]];
+        NSUInteger location = range.location;
+        
+        if (range.length > 0) {
+            NSString *string = [NSString stringWithFormat:@"%@%c%@",
+                                [keyName substringToIndex:location],
+                                toupper([keyName characterAtIndex:(location + 1)]),
+                                [keyName substringFromIndex:location + 2]];
+            
+            return string;
+        } else {
+            return keyName;
+        }
+    };
+    
+    return [[self alloc] initWithJSONToModelBlock:toModel
+                                 modelToJSONBlock:toJSON];
+}
+
 @end
