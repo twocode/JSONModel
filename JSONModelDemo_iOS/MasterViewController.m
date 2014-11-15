@@ -126,14 +126,14 @@
 
 -(id)initWithString:(NSString*)string error:(JSONModelError**)err
 {
+    _model = [[Model alloc] init];
     self = [super initWithString:string error:err];
-    
     if (self) {
-        _model = [[Model alloc] init];
 //        _model.no = @"TEST";
 //        [self setValue:@"mabide" forKeyPath:@"model.no"];
     } else {
         //ERROR
+        _model = nil;
     }
     
     return self;
